@@ -68,15 +68,25 @@
     user-select:none;
   }
   .chip:hover{border-color:rgba(245,158,11,.85)}
+  .qmeta{
+  display:flex;
+  gap:8px;
+  align-items:center;
+}
+.badge{
+  padding:6px 10px;
+  border-radius:999px;
+  font-weight:900;
+  font-size:12px;
+  border:1px solid rgba(255,255,255,.18);
+  background:rgba(0,0,0,.25);
+  color:var(--text);
+}
+.badge.locked{
+  border-color:rgba(56,189,248,.55);
+  background:rgba(56,189,248,.16);
+}
 
-  /* badge “Вибрано” */
-  .qmeta{display:flex;gap:8px;align-items:center}
-  .badge{
-    padding:6px 10px;border-radius:999px;font-weight:900;font-size:12px;
-    border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.25);color:var(--text);
-    white-space:nowrap;
-  }
-  .badge.locked{border-color:rgba(56,189,248,.55);background:rgba(56,189,248,.16)}
 </style>
 </head>
 
@@ -92,16 +102,18 @@
     </div>
   </header>
 
+  <!-- START -->
   <section id="start" class="grid" style="margin-top:16px">
     <div class="card">
       <h1>Розпочати модуль</h1>
-      <p>60 питань · 40 хв. Порядок питань однаковий для всіх. Після вибору відповідь фіксується і змінити її не можна.</p>
+      <p>60 питань · 40 хв. Порядок питань однаковий для всіх студентів.</p>
       <div class="btnrow">
         <button id="startBtn">Почати тест</button>
       </div>
     </div>
   </section>
 
+  <!-- QUIZ -->
   <section id="quiz" class="grid hide" style="margin-top:16px">
     <div class="card">
       <h2 style="margin:0">Тест</h2>
@@ -112,7 +124,7 @@
       </div>
 
       <div style="margin-top:12px" class="progress"><div id="bar" class="bar"></div></div>
-      <p class="small" style="margin-top:8px">Щоб завершити — дай відповіді на всі 60 запитань.</p>
+      <p class="small" id="needAll" style="margin-top:8px">Щоб завершити — дай відповіді на всі 60 запитань.</p>
 
       <div id="unansweredPanel" class="unans hide">
         <h3>Не відповіли на питання:</h3>
@@ -129,6 +141,7 @@
     <div id="questions" class="grid"></div>
   </section>
 
+  <!-- RESULT -->
   <section id="result" class="grid hide" style="margin-top:16px">
     <div class="card">
       <h2>Результат</h2>
@@ -155,8 +168,8 @@
 
 <script>
 (() => {
-  // Без перемішування: порядок однаковий у всіх.
-  // 21–60 тут повторюють 1–20 по колу (як у твоєму коді). Якщо хочеш — зроблю 60 унікальних.
+  // ВАЖЛИВО: тут НЕМАЄ перемішування ні питань, ні варіантів відповіді.
+  // Порядок завжди однаковий у всіх студентів.
 
   const bank = [
     {q:"1) Що таке PHP у веб-розробці?",o:["Мова стилів","Мова сценаріїв на стороні сервера","Браузерний рушій","СУБД"],a:1},
@@ -184,10 +197,11 @@
     {q:"20) Model у MVC відповідає за:",o:["Дані/роботу з БД","CSS","HTML-шаблони","Лише маршрути"],a:0},
   ];
 
+  // Добивка до 60 без перемішування: просто повторюємо блоки (краще потім замінити на унікальні 60)
   while(bank.length < 60){
     const k = bank.length + 1;
     const base = bank[(bank.length) % 20];
-    bank.push({q:`${k}) ${base.q.replace(/^\\d+\\)\\s*/,"")}`, o:[...base.o], a:base.a});
+    bank.push({q:`${k}) ${base.q.replace(/^\d+\)\s*/,"")}`, o:[...base.o], a:base.a});
   }
 
   const $ = s => document.querySelector(s);
@@ -203,7 +217,7 @@
     secondsLeft: 40*60, timerId:null,
     chosen:new Array(60).fill(null),
     isCorrect:new Array(60).fill(null),
-    finished:false
+    started:false, finished:false
   };
 
   function fmt(sec){
@@ -298,16 +312,6 @@
       title.className="qtitle";
       title.textContent=item.q;
 
-      // badge справа: що вибрано
-      const meta = document.createElement("div");
-      meta.className = "qmeta";
-      const badge = document.createElement("div");
-      badge.className = "badge";
-      badge.id = `badge_${pos}`;
-      badge.textContent = (state.chosen[pos]===null) ? "Не вибрано" : `Вибрано: ${String.fromCharCode(65+state.chosen[pos])}`;
-      if(state.chosen[pos]!==null) badge.classList.add("locked");
-      meta.appendChild(badge);
-
       const opts=document.createElement("div");
       opts.className="opts";
 
@@ -325,39 +329,29 @@
         r.name=`q_${pos}`;
         r.value=oi;
 
-        // якщо вже була відповідь — показати і заблокувати
-        if(state.chosen[pos]!==null){
-          r.disabled = true;
-          if(state.chosen[pos]===oi) r.checked = true;
-        }
+    r.addEventListener("change",()=>{
+  // якщо вже є відповідь — нічого не робимо
+  if (state.chosen[pos] !== null) return;
 
-        r.addEventListener("change",()=>{
-          // якщо вже відповів — не даємо змінювати
-          if(state.chosen[pos] !== null) return;
+  state.chosen[pos]=oi;
 
-          state.chosen[pos]=oi;
+  // Блокуємо всі варіанти в цьому питанні (щоб не можна було змінювати)
+  document.querySelectorAll(`input[name="q_${pos}"]`).forEach(inp => {
+    inp.disabled = true;
+  });
 
-          // блокуємо всі варіанти цього питання
-          document.querySelectorAll(`input[name="q_${pos}"]`).forEach(inp => inp.disabled = true);
+  const ok = (oi===item.a);
+  state.isCorrect[pos]=ok;
 
-          const ok = (oi===item.a);
-          state.isCorrect[pos]=ok;
+  const box=document.getElementById(`fb_${pos}`);
+  box.innerHTML = `
+    <span class="${ok ? "ok" : "bad"}">${ok ? "✔ Правильно" : "✖ Неправильно"}</span>
+    <span class="small">Зафіксовано. Твоя: <b>${String.fromCharCode(65+oi)}</b> • Правильна: <b>${String.fromCharCode(65+item.a)}</b></span>
+  `;
 
-          // оновити badge
-          const b=document.getElementById(`badge_${pos}`);
-          if(b){
-            b.textContent = `Вибрано: ${String.fromCharCode(65+oi)}`;
-            b.classList.add("locked");
-          }
+  updateStats();
+    });
 
-          const box=document.getElementById(`fb_${pos}`);
-          box.innerHTML = `
-            <span class="${ok ? "ok" : "bad"}">${ok ? "✔ Правильно" : "✖ Неправильно"}</span>
-            <span class="small">Питання №${pos+1} зафіксовано: <b>${String.fromCharCode(65+oi)}</b></span>
-          `;
-
-          updateStats();
-        });
 
         const span=document.createElement("span");
         span.textContent = `${String.fromCharCode(65+oi)}) ${optText}`;
@@ -373,8 +367,6 @@
 
       head.appendChild(num);
       head.appendChild(body);
-      head.appendChild(meta);
-
       wrap.appendChild(head);
       questionsEl.appendChild(wrap);
     }
@@ -426,6 +418,7 @@
   }
 
   startBtn.addEventListener("click",()=>{
+    state.started=true;
     startSec.classList.add("hide");
     quizSec.classList.remove("hide");
     render();
@@ -447,6 +440,7 @@
 
   backToStartBtn.addEventListener("click",()=>{
     reset();
+    state.started=false;
     resSec.classList.add("hide");
     quizSec.classList.add("hide");
     startSec.classList.remove("hide");
